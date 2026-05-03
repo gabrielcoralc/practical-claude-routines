@@ -1,0 +1,29 @@
+{
+  "_comentario": "Precios round-trip en COP. 'tipico' es referencia, 'buen_precio' marca [OFERTA] vs benchmark, 'oferta_fuerte' marca pts adicionales. Ajustar con datos reales del histórico tras 30+ días.",
+  "moneda": "COP",
+  "rutas": {
+    "PSO-BOG": { "grupo": "A", "tipico": 350000, "buen_precio": 250000, "oferta_fuerte": 180000 },
+    "PSO-MDE": { "grupo": "A", "tipico": 450000, "buen_precio": 280000, "oferta_fuerte": 220000 },
+    "PSO-CTG": { "grupo": "A", "tipico": 600000, "buen_precio": 450000, "oferta_fuerte": 350000 },
+
+    "PSO-MAD": { "grupo": "B", "tipico": 3500000, "buen_precio": 2800000, "oferta_fuerte": 2300000 },
+    "BOG-MAD": { "grupo": "B", "tipico": 3000000, "buen_precio": 2300000, "oferta_fuerte": 1900000 },
+
+    "PSO-MIA": { "grupo": "B", "tipico": 1800000, "buen_precio": 1300000, "oferta_fuerte": 1000000 },
+    "BOG-MIA": { "grupo": "B", "tipico": 1400000, "buen_precio": 1000000, "oferta_fuerte": 800000 },
+
+    "PSO-EZE": { "grupo": "B", "tipico": 2400000, "buen_precio": 1800000, "oferta_fuerte": 1400000 },
+    "BOG-EZE": { "grupo": "B", "tipico": 1900000, "buen_precio": 1400000, "oferta_fuerte": 1100000 },
+
+    "PSO-GIG": { "grupo": "C", "tipico": 2800000, "buen_precio": 2200000, "oferta_fuerte": 1700000 },
+    "BOG-GIG": { "grupo": "C", "tipico": 2400000, "buen_precio": 1800000, "oferta_fuerte": 1400000 },
+
+    "PSO-NRT": { "grupo": "C", "tipico": 5500000, "buen_precio": 4200000, "oferta_fuerte": 3300000 },
+    "BOG-NRT": { "grupo": "C", "tipico": 5000000, "buen_precio": 3500000, "oferta_fuerte": 2800000 }
+  },
+  "ventanas": {
+    "A": { "anticipacion_min_dias": 14, "anticipacion_max_dias": 90,  "estancia_min": 3,  "estancia_max": 7  },
+    "B": { "anticipacion_min_dias": 30, "anticipacion_max_dias": 180, "estancia_min": 7,  "estancia_max": 20 },
+    "C": { "anticipacion_min_dias": 60, "anticipacion_max_dias": 365, "estancia_min": 10, "estancia_max": 21 }
+  }
+}

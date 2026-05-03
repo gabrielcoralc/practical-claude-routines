@@ -1,0 +1,177 @@
+name: Notify Telegram on flight report
+
+on:
+  push:
+    paths:
+      - 'vuelos/reportes/**.md'
+  workflow_dispatch:
+    inputs:
+      report_file:
+        description: 'Ruta al reporte a notificar (ej: vuelos/reportes/2026-04-25.md)'
+        required: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Locate latest report
+        id: locate
+        run: |
+          set -euo pipefail
+          if [ -n "${{ github.event.inputs.report_file }}" ]; then
+            FILE="${{ github.event.inputs.report_file }}"
+          else
+            FILE=$(git diff --name-only HEAD~1 HEAD -- 'vuelos/reportes/*.md' | tail -n1 || true)
+            if [ -z "$FILE" ]; then
+              FILE=$(ls -1 vuelos/reportes/*.md 2>/dev/null | sort | tail -n1 || true)
+            fi
+          fi
+          if [ -z "$FILE" ] || [ ! -f "$FILE" ]; then
+            echo "No report file found, skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Build Telegram message
+        if: steps.locate.outputs.skip != 'true'
+        id: build
+        env:
+          REPORT_FILE: ${{ steps.locate.outputs.file }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import os, re, json, pathlib, html
+
+          path = pathlib.Path(os.environ["REPORT_FILE"])
+          text = path.read_text(encoding="utf-8")
+          repo = os.environ["REPO"]
+          sha  = os.environ["SHA"][:7]
+          url  = f"https://github.com/{repo}/blob/{sha}/{path.as_posix()}"
+
+          def esc(s): return html.escape(str(s), quote=False)
+
+          def fmt_cop(n):
+              try:
+                  return "$" + f"{int(n):,}".replace(",", ".")
+              except Exception:
+                  return str(n)
+
+          NIVELES = ["CHOLLO", "OFERTA FUERTE", "OFERTA"]
+
+          # 1) Intentar leer bloque JSON estructurado al final del reporte.
+          data = None
+          m = re.search(r"```json\s*\n(.*?)\n```", text, re.S)
+          if m:
+              try:
+                  data = json.loads(m.group(1))
+              except Exception:
+                  data = None
+
+          lines = []
+
+          if data and isinstance(data, dict):
+              fecha   = data.get("fecha") or path.stem
+              conteos = data.get("conteos", {}) or {}
+              alertas = data.get("alertas", []) or []
+
+              # Tag más severo para el título
+              tag = ""
+              for n in NIVELES:
+                  key = n.lower().replace(" ", "_")
+                  if conteos.get(key, 0) > 0:
+                      tag = f"[{n}] "
+                      break
+
+              lines.append(f"<b>{esc(tag)}Vuelos {esc(fecha)}</b>")
+
+              partes = [f"{n}: {conteos.get(n.lower().replace(' ','_'), 0)}" for n in NIVELES]
+              lines.append(esc(" · ".join(partes)))
+
+              if not alertas:
+                  lines.append("")
+                  lines.append("Sin alertas hoy.")
+              else:
+                  for a in alertas[:8]:  # tope para que no explote el mensaje
+                      nivel  = a.get("nivel", "")
+                      origen = a.get("origen", "?")
+                      destino= a.get("destino", "?")
+                      precio = a.get("precio_cop")
+                      aero   = a.get("aerolinea", "")
+                      paradas= a.get("paradas")
+                      f_sal  = a.get("fecha_salida", "")
+                      f_reg  = a.get("fecha_regreso", "")
+                      antic  = a.get("dias_anticipacion")
+                      pct    = a.get("vs_benchmark_pct")  # negativo = bajo benchmark
+                      bench  = a.get("benchmark_cop")
+
+                      lines.append("")
+                      lines.append(f"<b>[{esc(nivel)}]</b> {esc(origen)} → {esc(destino)}  <b>{esc(fmt_cop(precio))}</b>")
+                      meta_bits = []
+                      if aero: meta_bits.append(esc(aero))
+                      if paradas is not None:
+                          meta_bits.append("directo" if paradas == 0 else f"{paradas} parada{'s' if paradas!=1 else ''}")
+                      if f_sal and f_reg: meta_bits.append(f"{esc(f_sal)} → {esc(f_reg)}")
+                      if antic is not None: meta_bits.append(f"anticip {antic}d")
+                      if meta_bits:
+                          lines.append(" · ".join(meta_bits))
+                      if pct is not None and bench is not None:
+                          lines.append(f"<i>{pct:+.1f}% vs benchmark {esc(fmt_cop(bench))}</i>")
+
+                  if len(alertas) > 8:
+                      lines.append("")
+                      lines.append(f"<i>+{len(alertas)-8} alertas más en el reporte completo.</i>")
+
+              lines.append("")
+              lines.append(f'<a href="{esc(url)}">Ver reporte completo</a>')
+
+          else:
+              # Fallback: sin bloque JSON, mandamos resumen plano del reporte.
+              def section(name, src):
+                  m = re.search(rf"##\s+{re.escape(name)}\s*\n(.*?)(?=\n##\s|\Z)", src, re.S | re.I)
+                  return m.group(1).strip() if m else ""
+
+              resumen = section("Resumen", text) or "Sin resumen."
+              tag = ""
+              for n in NIVELES:
+                  if f"[{n}]" in text:
+                      tag = f"[{n}] "
+                      break
+              lines.append(f"<b>{esc(tag)}Vuelos {esc(path.stem)}</b>")
+              lines.append("")
+              lines.append(esc(resumen[:1500]))
+              lines.append("")
+              lines.append(f'<a href="{esc(url)}">Ver reporte completo</a>')
+
+          body = "\n".join(lines)
+          if len(body) > 3900:
+              body = body[:3900] + "\n<i>(truncado)</i>"
+
+          print("message<<MSGEOF")
+          print(body)
+          print("MSGEOF")
+          PY
+
+      - name: Send Telegram message
+        if: steps.locate.outputs.skip != 'true'
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          MESSAGE:   ${{ steps.build.outputs.message }}
+        run: |
+          if [ -z "${BOT_TOKEN:-}" ] || [ -z "${CHAT_ID:-}" ]; then
+            echo "::error::Faltan secrets TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID."
+            exit 1
+          fi
+          curl -sS --fail-with-body \
+            -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT_ID}" \
+            --data-urlencode "text=${MESSAGE}" \
+            --data-urlencode "parse_mode=HTML" \
+            --data-urlencode "disable_web_page_preview=true"
