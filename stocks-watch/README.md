@@ -35,17 +35,38 @@ de 2 minutos.
 
 ## Niveles de recomendación
 
-| Nivel | Trigger principal |
-|---|---|
-| `VENDER` | Stop-loss tocado o take-profit completo |
-| `VENDER PARCIAL` | Take-profit + señal de momentum positivo (mantener fracción) |
-| `COMPRAR MÁS` | Precio bajó por debajo del `buy_more_pct` configurado vs compra |
-| `OBSERVAR` | Señal técnica (drawdown sostenido, tendencia negativa) sin trigger duro |
-| `MANTENER` | Sin señales accionables |
+Mezcla de **triggers reactivos** (algo ya pasó, hay que actuar) y **señales
+anticipatorias** (probabilidad de movimiento, conviene preparar la jugada).
 
-Las noticias actúan como **modificador**: 2+ negativas refuerzan recomendaciones
-negativas; 2+ positivas pueden convertir un `VENDER` por take-profit en
-`VENDER PARCIAL` (mantener fracción por momentum).
+| Nivel | Trigger principal | Acción sugerida |
+|---|---|---|
+| `VENDER` | Stop-loss tocado o take-profit completo | Vender la posición ya |
+| `VENDER PARCIAL` | Take-profit + momentum positivo | Vender 30-50%, mantener resto |
+| `PROTEGER` | ≥2 señales bearish anticipatorias (RSI sobrecompra, noticias negativas, volumen distribución, earnings cercano) | Poner stop-loss preventivo en `stop_loss_sugerido_usd` |
+| `COMPRAR MÁS` | Precio bajó del `buy_more_pct` configurado | Comprar al precio actual para promediar |
+| `PREPARAR COMPRA` | ≥2 señales bullish anticipatorias (RSI sobreventa, noticias positivas, cerca de soporte, acumulación) | Orden limitada de compra en `limit_buy_sugerido_usd` |
+| `OBSERVAR` | Señal técnica débil (drawdown + tendencia negativa) | Mirar, no actuar |
+| `MANTENER` | Sin señales | Nada |
+
+Prioridad de evaluación: triggers duros (a) → señales bearish (b) → señales
+bullish (c) → técnicas débiles (d). Cada ticker recibe **una sola**
+recomendación.
+
+Las noticias actúan como **modificador**: 2+ negativas refuerzan
+recomendaciones negativas; 2+ positivas pueden bajar un VENDER por
+take-profit a VENDER PARCIAL.
+
+## Señales técnicas que calcula la routine
+
+- **RSI 14** — sobrecompra (>70) / sobreventa (<30).
+- **Soporte/resistencia 30d** — base para sugerir stop-loss y limit buy.
+- **Tendencia 30d** — pendiente de regresión lineal, % por día.
+- **Drawdown 30d** — caída desde el máximo reciente.
+- **Volatilidad 30d anualizada**.
+- **Volumen relativo** — volumen hoy / media 20d. >1.5 = spike (acumulación
+  o distribución según dirección).
+- **Earnings próximo** — días al próximo earnings (vía `yf.Ticker.calendar`).
+  Aplica solo a stocks.
 
 ## Requisitos
 

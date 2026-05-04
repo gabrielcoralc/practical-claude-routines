@@ -70,9 +70,13 @@ jobs:
               except Exception:
                   return "—"
 
-          NIVELES = ["VENDER", "VENDER PARCIAL", "COMPRAR MÁS", "OBSERVAR"]
+          NIVELES = ["VENDER", "VENDER PARCIAL", "PROTEGER", "COMPRAR MÁS",
+                     "PREPARAR COMPRA", "OBSERVAR"]
           KEY = {"VENDER": "vender", "VENDER PARCIAL": "vender_parcial",
-                 "COMPRAR MÁS": "comprar_mas", "OBSERVAR": "observar",
+                 "PROTEGER": "proteger",
+                 "COMPRAR MÁS": "comprar_mas",
+                 "PREPARAR COMPRA": "preparar_compra",
+                 "OBSERVAR": "observar",
                  "MANTENER": "mantener"}
 
           data = None
@@ -123,8 +127,13 @@ jobs:
                       pct     = a.get("pct_vs_compra")
                       shares  = a.get("shares")
                       valor_p = a.get("valor_actual_usd")
+                      rsi     = a.get("rsi_14")
                       dd      = a.get("drawdown_30d")
                       tend    = a.get("tendencia_30d")
+                      sl_sug  = a.get("stop_loss_sugerido_usd")
+                      lb_sug  = a.get("limit_buy_sugerido_usd")
+                      earn    = a.get("earnings_proximo")
+                      d_earn  = a.get("dias_a_earnings")
                       sent    = a.get("sentimiento_noticias", "")
                       razon   = a.get("razon_principal", "")
 
@@ -134,15 +143,25 @@ jobs:
                           header += f"  ({esc(fmt_pct(pct))} vs compra)"
                       lines.append(header)
 
+                      # Acción sugerida concreta (precio objetivo)
+                      if rec == "PROTEGER" and sl_sug is not None:
+                          lines.append(f"<b>→ Stop-loss sugerido:</b> {esc(fmt_usd(sl_sug))}")
+                      elif rec == "PREPARAR COMPRA" and lb_sug is not None:
+                          lines.append(f"<b>→ Orden limitada de compra:</b> {esc(fmt_usd(lb_sug))}")
+
                       meta = []
                       if shares is not None and valor_p is not None:
                           meta.append(f"{shares} sh · {fmt_usd(valor_p)}")
+                      if rsi is not None:
+                          meta.append(f"RSI {rsi:.0f}")
                       if dd is not None:
                           meta.append(f"DD30d {fmt_pct(dd, signed=False)}")
                       if tend is not None:
                           meta.append(f"tend {fmt_pct(tend)}/d")
                       if sent and sent != "sin_noticias":
                           meta.append(f"news: {sent}")
+                      if earn and d_earn is not None:
+                          meta.append(f"earnings en {d_earn}d")
                       if meta:
                           lines.append(esc(" · ".join(meta)))
                       if razon:
@@ -182,7 +201,8 @@ jobs:
           if data and isinstance(data, dict):
               conteos = data.get("conteos", {}) or {}
               actionable = sum(int(conteos.get(k, 0) or 0) for k in
-                               ("vender", "vender_parcial", "comprar_mas", "observar"))
+                               ("vender", "vender_parcial", "proteger",
+                                "comprar_mas", "preparar_compra", "observar"))
               if actionable == 0:
                   skip_send = "true"
 
