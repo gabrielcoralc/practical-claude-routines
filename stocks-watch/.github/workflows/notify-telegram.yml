@@ -1,0 +1,199 @@
+name: Notify Telegram on stocks report
+
+on:
+  push:
+    paths:
+      - 'reportes/**.md'
+  workflow_dispatch:
+    inputs:
+      report_file:
+        description: 'Ruta al reporte a notificar (ej: reportes/2026-05-03.md)'
+        required: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Locate latest report
+        id: locate
+        run: |
+          set -euo pipefail
+          if [ -n "${{ github.event.inputs.report_file }}" ]; then
+            FILE="${{ github.event.inputs.report_file }}"
+          else
+            FILE=$(git diff --name-only HEAD~1 HEAD -- 'reportes/*.md' | tail -n1 || true)
+            if [ -z "$FILE" ]; then
+              FILE=$(ls -1 reportes/*.md 2>/dev/null | sort | tail -n1 || true)
+            fi
+          fi
+          if [ -z "$FILE" ] || [ ! -f "$FILE" ]; then
+            echo "No report file found, skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Build Telegram message
+        if: steps.locate.outputs.skip != 'true'
+        id: build
+        env:
+          REPORT_FILE: ${{ steps.locate.outputs.file }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import os, re, json, pathlib, html
+
+          path = pathlib.Path(os.environ["REPORT_FILE"])
+          text = path.read_text(encoding="utf-8")
+          repo = os.environ["REPO"]
+          sha  = os.environ["SHA"][:7]
+          url  = f"https://github.com/{repo}/blob/{sha}/{path.as_posix()}"
+
+          def esc(s): return html.escape(str(s), quote=False)
+
+          def fmt_usd(n):
+              try:
+                  return f"${float(n):,.2f}"
+              except Exception:
+                  return str(n)
+
+          def fmt_pct(n, signed=True):
+              try:
+                  v = float(n)
+                  return f"{v:+.2f}%" if signed else f"{v:.2f}%"
+              except Exception:
+                  return "—"
+
+          NIVELES = ["VENDER", "VENDER PARCIAL", "COMPRAR MÁS", "OBSERVAR"]
+          KEY = {"VENDER": "vender", "VENDER PARCIAL": "vender_parcial",
+                 "COMPRAR MÁS": "comprar_mas", "OBSERVAR": "observar",
+                 "MANTENER": "mantener"}
+
+          data = None
+          m = re.search(r"```json\s*\n(.*?)\n```", text, re.S)
+          if m:
+              try:
+                  data = json.loads(m.group(1))
+              except Exception:
+                  data = None
+
+          lines = []
+
+          if data and isinstance(data, dict):
+              fecha    = data.get("fecha") or path.stem
+              valor    = data.get("valor_total_usd")
+              cambio   = data.get("cambio_diario_pct")
+              conteos  = data.get("conteos", {}) or {}
+              acciones = data.get("acciones", []) or []
+
+              # Tag más severo para el título
+              tag = ""
+              for n in NIVELES:
+                  if conteos.get(KEY[n], 0) > 0:
+                      tag = f"[{n}] "
+                      break
+
+              lines.append(f"<b>{esc(tag)}Stocks {esc(fecha)}</b>")
+
+              header_bits = []
+              if valor is not None:
+                  header_bits.append(f"Total: <b>{esc(fmt_usd(valor))}</b>")
+              if cambio is not None:
+                  header_bits.append(f"Hoy: {esc(fmt_pct(cambio))}")
+              if header_bits:
+                  lines.append(esc(" · ").join(header_bits) if False else " · ".join(header_bits))
+
+              partes = [f"{n}: {conteos.get(KEY[n], 0)}" for n in NIVELES]
+              lines.append(esc(" · ".join(partes)))
+
+              if not acciones:
+                  lines.append("")
+                  lines.append("Sin acciones recomendadas hoy.")
+              else:
+                  for a in acciones[:8]:
+                      rec     = a.get("recomendacion", "")
+                      ticker  = a.get("ticker", "?")
+                      precio  = a.get("precio_actual")
+                      pct     = a.get("pct_vs_compra")
+                      shares  = a.get("shares")
+                      valor_p = a.get("valor_actual_usd")
+                      dd      = a.get("drawdown_30d")
+                      tend    = a.get("tendencia_30d")
+                      sent    = a.get("sentimiento_noticias", "")
+                      razon   = a.get("razon_principal", "")
+
+                      lines.append("")
+                      header = f"<b>[{esc(rec)}]</b> {esc(ticker)}  <b>{esc(fmt_usd(precio))}</b>"
+                      if pct is not None:
+                          header += f"  ({esc(fmt_pct(pct))} vs compra)"
+                      lines.append(header)
+
+                      meta = []
+                      if shares is not None and valor_p is not None:
+                          meta.append(f"{shares} sh · {fmt_usd(valor_p)}")
+                      if dd is not None:
+                          meta.append(f"DD30d {fmt_pct(dd, signed=False)}")
+                      if tend is not None:
+                          meta.append(f"tend {fmt_pct(tend)}/d")
+                      if sent and sent != "sin_noticias":
+                          meta.append(f"news: {sent}")
+                      if meta:
+                          lines.append(esc(" · ".join(meta)))
+                      if razon:
+                          lines.append(f"<i>{esc(razon)}</i>")
+
+                  if len(acciones) > 8:
+                      lines.append("")
+                      lines.append(f"<i>+{len(acciones)-8} más en el reporte completo.</i>")
+
+              lines.append("")
+              lines.append(f'<a href="{esc(url)}">Ver reporte completo</a>')
+
+          else:
+              def section(name, src):
+                  m = re.search(rf"##\s+{re.escape(name)}\s*\n(.*?)(?=\n##\s|\Z)", src, re.S | re.I)
+                  return m.group(1).strip() if m else ""
+              resumen = section("Resumen", text) or "Sin resumen."
+              tag = ""
+              for n in NIVELES:
+                  if f"[{n}]" in text:
+                      tag = f"[{n}] "
+                      break
+              lines.append(f"<b>{esc(tag)}Stocks {esc(path.stem)}</b>")
+              lines.append("")
+              lines.append(esc(resumen[:1500]))
+              lines.append("")
+              lines.append(f'<a href="{esc(url)}">Ver reporte completo</a>')
+
+          body = "\n".join(lines)
+          if len(body) > 3900:
+              body = body[:3900] + "\n<i>(truncado)</i>"
+
+          print("message<<MSGEOF")
+          print(body)
+          print("MSGEOF")
+          PY
+
+      - name: Send Telegram message
+        if: steps.locate.outputs.skip != 'true'
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          MESSAGE:   ${{ steps.build.outputs.message }}
+        run: |
+          if [ -z "${BOT_TOKEN:-}" ] || [ -z "${CHAT_ID:-}" ]; then
+            echo "::error::Faltan secrets TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID."
+            exit 1
+          fi
+          curl -sS --fail-with-body \
+            -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT_ID}" \
+            --data-urlencode "text=${MESSAGE}" \
+            --data-urlencode "parse_mode=HTML" \
+            --data-urlencode "disable_web_page_preview=true"

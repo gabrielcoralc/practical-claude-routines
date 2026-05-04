@@ -1,0 +1,54 @@
+{
+  "_comentario": "Ejemplo de portafolio. En tu repo privado, copia este archivo a 'portafolio.json' y reemplaza con tus posiciones reales (cost basis incluido).",
+  "moneda": "USD",
+  "config_default": {
+    "stop_loss_pct": -10,
+    "take_profit_pct": 20,
+    "buy_more_pct": -15,
+    "_doc": "Defaults para stocks tradicionales. Cada posición puede sobrescribir."
+  },
+  "config_default_crypto": {
+    "stop_loss_pct": -25,
+    "take_profit_pct": 50,
+    "buy_more_pct": -30,
+    "_doc": "Defaults más amplios para crypto por mayor volatilidad."
+  },
+  "posiciones": [
+    {
+      "ticker": "AAPL",
+      "yf_symbol": "AAPL",
+      "tipo": "stock",
+      "shares": 1.5,
+      "precio_compra": 180.00,
+      "fecha_compra": "2024-06-01",
+      "stop_loss_pct": null,
+      "take_profit_pct": null,
+      "buy_more_pct": null,
+      "notas": ""
+    },
+    {
+      "ticker": "GOOGL",
+      "yf_symbol": "GOOGL",
+      "tipo": "stock",
+      "shares": 2.0,
+      "precio_compra": 140.00,
+      "fecha_compra": "2024-08-15",
+      "stop_loss_pct": null,
+      "take_profit_pct": 25,
+      "buy_more_pct": null,
+      "notas": "Take-profit override: tomar ganancias antes que el default."
+    },
+    {
+      "ticker": "BTCUSD",
+      "yf_symbol": "BTC-USD",
+      "tipo": "crypto",
+      "shares": 0.005,
+      "precio_compra": 60000,
+      "fecha_compra": "2024-03-01",
+      "stop_loss_pct": null,
+      "take_profit_pct": null,
+      "buy_more_pct": null,
+      "notas": "Crypto: usa config_default_crypto."
+    }
+  ]
+}

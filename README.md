@@ -65,7 +65,7 @@ responsabilidades, retry fácil, secretos viven en GitHub.
 | Routine | Estado | Descripción |
 |---|---|---|
 | [flight-monitor](flight-monitor/) | Funcional | Monitoreo diario de precios de vuelos vía MCP de Kiwi.com con detección de ofertas vs benchmarks e histórico. |
-| [stocks-watch](stocks-watch/) | Planeado | Análisis diario de un portafolio de acciones con recomendaciones de compra/venta basadas en límites configurables. |
+| [stocks-watch](stocks-watch/) | Funcional | Análisis diario de un portafolio de acciones y crypto con recomendaciones (vender/comprar/observar) basadas en stop-loss, take-profit, señales técnicas y sentimiento de noticias (yfinance + Python). |
 | [claude-changelog](claude-changelog/) | Planeado | Tracking diario de novedades de Claude Code (release notes, blog, GitHub releases) para mantenerse al día con nuevas features. |
 
 ## Cómo usar este catálogo

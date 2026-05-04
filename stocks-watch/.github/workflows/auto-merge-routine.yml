@@ -1,0 +1,72 @@
+name: Auto-merge routine branches to main
+
+on:
+  push:
+    branches:
+      - 'claude/**'
+
+concurrency:
+  group: auto-merge-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check changed files
+        id: check
+        run: |
+          set -euo pipefail
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          git fetch origin "$BRANCH":"refs/remotes/origin/$BRANCH"
+          CHANGED=$(git diff --name-only origin/main..."origin/$BRANCH")
+          echo "Changed files:"
+          echo "$CHANGED"
+          if [ -z "$CHANGED" ]; then
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+            echo "Branch has no diff vs main — skipping auto-merge."
+            exit 0
+          fi
+          BLOCKED=$(echo "$CHANGED" | grep -E '^(prompt\.md|README\.md)$' || true)
+          if [ -n "$BLOCKED" ]; then
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+            echo "Branch modifies protected files ($BLOCKED) — skipping auto-merge."
+          else
+            echo "blocked=false" >> "$GITHUB_OUTPUT"
+            echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge into main
+        if: steps.check.outputs.blocked == 'false'
+        run: |
+          set -euo pipefail
+          BRANCH="${{ steps.check.outputs.branch }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git merge --no-ff "origin/$BRANCH" -m "Auto-merge $BRANCH into main"
+          for attempt in 1 2 3 4 5; do
+            if git push origin main; then
+              echo "Push succeeded on attempt $attempt"
+              exit 0
+            fi
+            echo "Push rejected on attempt $attempt — rebasing onto updated main and retrying"
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 2))
+          done
+          echo "Push failed after 5 attempts"
+          exit 1
+
+      - name: Delete merged branch
+        if: steps.check.outputs.blocked == 'false'
+        run: |
+          BRANCH="${{ steps.check.outputs.branch }}"
+          git push origin --delete "$BRANCH" || echo "Branch already deleted — skipping."
