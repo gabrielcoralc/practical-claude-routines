@@ -153,13 +153,24 @@ jobs:
           if len(body) > 3900:
               body = body[:3900] + "\n<i>(truncado)</i>"
 
+          # Decidir si enviar: solo si hay alguna alerta. Sin JSON (fallback),
+          # enviamos siempre porque no podemos saberlo con certeza.
+          skip_send = "false"
+          if data and isinstance(data, dict):
+              conteos = data.get("conteos", {}) or {}
+              actionable = sum(int(conteos.get(k, 0) or 0) for k in
+                               ("chollo", "oferta_fuerte", "oferta"))
+              if actionable == 0:
+                  skip_send = "true"
+
+          print(f"skip_send={skip_send}")
           print("message<<MSGEOF")
           print(body)
           print("MSGEOF")
           PY
 
       - name: Send Telegram message
-        if: steps.locate.outputs.skip != 'true'
+        if: steps.locate.outputs.skip != 'true' && steps.build.outputs.skip_send != 'true'
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
